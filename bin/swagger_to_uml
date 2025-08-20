@@ -180,11 +180,12 @@ class Property:
 
 
 class Definition:
-    def __init__(self, name, type, properties, relationships):
+    def __init__(self, name, type, properties, relationships, enum_values=None):
         self.name = name  # type: str
         self.type = type  # type: str
         self.properties = properties  # type: List[Property]
         self.relationships = relationships  # type: Set[str]
+        self.enum_values = enum_values  # type: Optional[List[Any]]
 
     @staticmethod
     def from_dict(name, d):
@@ -196,16 +197,26 @@ class Definition:
                 required=property_name in d.get('required', [])
             ))
 
+        enum_values = d.get('enum') if isinstance(d.get('enum'), list) else None
+
         if not 'type' in d:
             print('required key "type" not found in dictionary ' + json.dumps(d), file=sys.stderr)
 
         return Definition(name=name,
                           type=d['type'],
                           properties=properties,
-                          relationships={property.ref_type for property in properties if property.ref_type})
+                          relationships={property.ref_type for property in properties if property.ref_type},
+                          enum_values=enum_values)
 
     @property
     def uml(self):
+        # Render enum types as PlantUML enums
+        if self.enum_values is not None:
+            members: List[str] = [f"    {str(val)}" for val in self.enum_values]
+
+            return 'enum {name} {{\n{members}\n}}\n\n'.format(name=self.name, members='\n'.join(members))
+
+        # Otherwise render as class with properties
         result = 'class {name} {{\n'.format(name=self.name)
 
         # required properties first
