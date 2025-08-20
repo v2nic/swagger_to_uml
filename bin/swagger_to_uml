@@ -353,6 +353,10 @@ class Swagger:
 
     @staticmethod
     def from_dict(d):
+        # Auto-detect and normalize OpenAPI 3.x to Swagger 2-like structure
+        if 'openapi' in d and 'paths' in d:
+            d = Swagger._normalize_openapi_to_swagger2(d)
+
         definitions = [Definition.from_dict(name, definition) for name, definition in d.get('definitions',{}).items()]
         paths = [Path.from_dict(d, path_name, path) for path_name, path in d['paths'].items()]
         return Swagger(definitions=definitions, paths=paths)
@@ -362,9 +366,100 @@ class Swagger:
         loader = json.load
         if filename.endswith('.yml') or filename.endswith('.yaml'):
             import yaml
-            loader = yaml.load
+            # Use safe_load for modern PyYAML versions
+            loader = yaml.safe_load
         with open(filename, 'r') as fd:
             return Swagger.from_dict(loader(fd))
+
+    @staticmethod
+    def _normalize_openapi_to_swagger2(openapi_doc):
+        """
+        Create a shallow Swagger 2-like dict that existing logic can consume by:
+        - Moving components.schemas -> definitions
+        - Hoisting components.parameters to top-level parameters so $ref works
+        - Converting requestBody to a body parameter with "schema"
+        - Converting responses.content.*.schema to top-level "schema" in each response
+        This aims to preserve output formatting of existing code paths.
+        """
+
+        def pick_schema_from_content(content_obj):
+            if not isinstance(content_obj, dict):
+                return None
+            # Prefer application/json, otherwise first available
+            if 'application/json' in content_obj and isinstance(content_obj['application/json'], dict):
+                return content_obj['application/json'].get('schema')
+            for v in content_obj.values():
+                if isinstance(v, dict) and 'schema' in v:
+                    return v.get('schema')
+            return None
+
+        swagger_like = {
+            'paths': {},
+            'definitions': {},
+        }
+
+        components = openapi_doc.get('components', {})
+        # Schemas
+        if 'schemas' in components and isinstance(components['schemas'], dict):
+            swagger_like['definitions'] = components['schemas']
+
+        # Parameters (for $ref resolution by Parameter.from_dict)
+        if 'parameters' in components and isinstance(components['parameters'], dict):
+            swagger_like['parameters'] = components['parameters']
+
+        # Paths and operations
+        for path_name, path_item in openapi_doc.get('paths', {}).items():
+            if not isinstance(path_item, dict):
+                continue
+            new_path_item = {}
+
+            # Path-level parameters (could be OAS3 or already Swagger-like)
+            path_level_params = path_item.get('parameters', [])
+            if isinstance(path_level_params, list):
+                new_path_item['parameters'] = path_level_params
+
+            for method, op in path_item.items():
+                if method in ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] and isinstance(op, dict):
+                    new_op = dict(op)  # shallow copy
+
+                    # requestBody -> body parameter
+                    if 'requestBody' in op and isinstance(op['requestBody'], dict):
+                        rb = op['requestBody']
+                        schema = pick_schema_from_content(rb.get('content', {}))
+                        if schema is not None:
+                            body_param = {
+                                'name': 'body',
+                                'in': 'body',
+                                'required': rb.get('required', False),
+                                'schema': schema,
+                                'description': rb.get('description'),
+                            }
+                            new_op_params = list(op.get('parameters', []))
+                            new_op_params.append(body_param)
+                            new_op['parameters'] = new_op_params
+
+                    # responses.content -> schema
+                    responses = {}
+                    for status, resp in op.get('responses', {}).items():
+                        if isinstance(resp, dict):
+                            new_resp = {'description': resp.get('description')}
+                            if 'content' in resp:
+                                schema = pick_schema_from_content(resp.get('content', {}))
+                                if schema is not None:
+                                    new_resp['schema'] = schema
+                            # if schema already present, keep it
+                            if 'schema' in resp:
+                                new_resp['schema'] = resp['schema']
+                            responses[status] = new_resp
+                        else:
+                            responses[status] = resp
+                    new_op['responses'] = responses
+
+                    new_path_item[method] = new_op
+
+            swagger_like['paths'][path_name] = new_path_item
+
+        return swagger_like
 
     @property
     def uml(self):

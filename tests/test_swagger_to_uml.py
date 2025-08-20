@@ -122,3 +122,21 @@ def test_end_to_end_petstore_matches_expected(input_file: Path, expected_puml: P
             )
         )
         pytest.fail(f"Generated UML does not match expected file.\n{diff}")
+
+
+def test_openapi_end_to_end_smoke():
+    # Ensure OpenAPI 3 input is accepted and produces UML with key elements
+    input_file = PETSTORE_DIR / "openapi.json"
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT_PATH), str(input_file)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    generated = result.stdout
+    # Minimal invariants
+    assert generated.startswith("@startuml")
+    assert "class Pet {" in generated  # model from components.schemas
+    assert 'interface "/pet"' in generated  # a path interface should exist

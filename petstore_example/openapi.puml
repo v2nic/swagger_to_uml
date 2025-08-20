@@ -1,0 +1,385 @@
+@startuml
+hide empty members
+set namespaceSeparator none
+
+interface "/pet" {
+}
+
+class "PUT /pet" {
+.. body ..
+{field} Pet <b>body</b>
+.. responses ..
+200: {field} Pet 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+422: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"PUT /pet" ..> Pet
+
+class "POST /pet" {
+.. body ..
+{field} Pet <b>body</b>
+.. responses ..
+200: {field} Pet 
+400: {field} <i>not specified</i> 
+422: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"POST /pet" ..> Pet
+
+"/pet" ..> "POST /pet"
+"/pet" ..> "PUT /pet"
+
+
+
+interface "/pet/findByStatus" {
+}
+
+class "GET /pet/findByStatus" {
+.. query ..
+{field} string <b>status</b>
+.. responses ..
+200: {field} Pet[] 
+400: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"GET /pet/findByStatus" ..> Pet
+
+"/pet/findByStatus" ..> "GET /pet/findByStatus"
+
+
+
+interface "/pet/findByTags" {
+}
+
+class "GET /pet/findByTags" {
+.. query ..
+{field} string[] <b>tags</b>
+.. responses ..
+200: {field} Pet[] 
+400: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"GET /pet/findByTags" ..> Pet
+
+"/pet/findByTags" ..> "GET /pet/findByTags"
+
+
+
+interface "/pet/{petId}" {
+}
+
+class "GET /pet/{petId}" {
+.. path ..
+{field} integer <b>petId</b>
+.. responses ..
+200: {field} Pet 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"GET /pet/{petId}" ..> Pet
+
+class "POST /pet/{petId}" {
+.. path ..
+{field} integer <b>petId</b>
+.. query ..
+{field} string name
+{field} string status
+.. responses ..
+200: {field} Pet 
+400: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"POST /pet/{petId}" ..> Pet
+
+class "DELETE /pet/{petId}" {
+.. header ..
+{field} string api_key
+.. path ..
+{field} integer <b>petId</b>
+.. responses ..
+200: {field} <i>not specified</i> 
+400: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+
+
+"/pet/{petId}" ..> "DELETE /pet/{petId}"
+"/pet/{petId}" ..> "GET /pet/{petId}"
+"/pet/{petId}" ..> "POST /pet/{petId}"
+
+
+
+interface "/pet/{petId}/uploadImage" {
+}
+
+class "POST /pet/{petId}/uploadImage" {
+.. path ..
+{field} integer <b>petId</b>
+.. query ..
+{field} string additionalMetadata
+.. body ..
+{field} string body
+.. responses ..
+200: {field} ApiResponse 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"POST /pet/{petId}/uploadImage" ..> ApiResponse
+
+"/pet/{petId}/uploadImage" ..> "POST /pet/{petId}/uploadImage"
+
+
+
+interface "/store/inventory" {
+}
+
+class "GET /store/inventory" {
+
+.. responses ..
+200: {field} object 
+default: {field} <i>not specified</i> 
+}
+
+
+
+"/store/inventory" ..> "GET /store/inventory"
+
+
+
+interface "/store/order" {
+}
+
+class "POST /store/order" {
+.. body ..
+{field} Order body
+.. responses ..
+200: {field} Order 
+400: {field} <i>not specified</i> 
+422: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"POST /store/order" ..> Order
+
+"/store/order" ..> "POST /store/order"
+
+
+
+interface "/store/order/{orderId}" {
+}
+
+class "GET /store/order/{orderId}" {
+.. path ..
+{field} integer <b>orderId</b>
+.. responses ..
+200: {field} Order 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"GET /store/order/{orderId}" ..> Order
+
+class "DELETE /store/order/{orderId}" {
+.. path ..
+{field} integer <b>orderId</b>
+.. responses ..
+200: {field} <i>not specified</i> 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+
+
+"/store/order/{orderId}" ..> "DELETE /store/order/{orderId}"
+"/store/order/{orderId}" ..> "GET /store/order/{orderId}"
+
+
+
+interface "/user" {
+}
+
+class "POST /user" {
+.. body ..
+{field} User body
+.. responses ..
+200: {field} User 
+default: {field} <i>not specified</i> 
+}
+
+"POST /user" ..> User
+
+"/user" ..> "POST /user"
+
+
+
+interface "/user/createWithList" {
+}
+
+class "POST /user/createWithList" {
+.. body ..
+{field} User[] body
+.. responses ..
+200: {field} User 
+default: {field} <i>not specified</i> 
+}
+
+"POST /user/createWithList" ..> User
+
+"/user/createWithList" ..> "POST /user/createWithList"
+
+
+
+interface "/user/login" {
+}
+
+class "GET /user/login" {
+.. query ..
+{field} string username
+{field} string password
+.. responses ..
+200: {field} string 
+400: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+
+
+"/user/login" ..> "GET /user/login"
+
+
+
+interface "/user/logout" {
+}
+
+class "GET /user/logout" {
+
+.. responses ..
+200: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+
+
+"/user/logout" ..> "GET /user/logout"
+
+
+
+interface "/user/{username}" {
+}
+
+class "GET /user/{username}" {
+.. path ..
+{field} string <b>username</b>
+.. responses ..
+200: {field} User 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"GET /user/{username}" ..> User
+
+class "PUT /user/{username}" {
+.. path ..
+{field} string <b>username</b>
+.. body ..
+{field} User body
+.. responses ..
+200: {field} <i>not specified</i> 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+"PUT /user/{username}" ..> User
+
+class "DELETE /user/{username}" {
+.. path ..
+{field} string <b>username</b>
+.. responses ..
+200: {field} <i>not specified</i> 
+400: {field} <i>not specified</i> 
+404: {field} <i>not specified</i> 
+default: {field} <i>not specified</i> 
+}
+
+
+
+"/user/{username}" ..> "DELETE /user/{username}"
+"/user/{username}" ..> "GET /user/{username}"
+"/user/{username}" ..> "PUT /user/{username}"
+
+
+class Order {
+    {field} integer (int64) id
+    {field} integer (int64) petId
+    {field} integer (int32) quantity
+    {field} string (date-time) shipDate
+    {field} string status {"placed", "approved", "delivered"}
+    {field} boolean complete
+}
+
+
+
+class Category {
+    {field} integer (int64) id
+    {field} string name
+}
+
+
+
+class User {
+    {field} integer (int64) id
+    {field} string username
+    {field} string firstName
+    {field} string lastName
+    {field} string email
+    {field} string password
+    {field} string phone
+    {field} integer (int32) userStatus
+}
+
+
+
+class Tag {
+    {field} integer (int64) id
+    {field} string name
+}
+
+
+
+class Pet {
+    {field} string <b>name</b>
+    {field} string[] <b>photoUrls</b>
+    {field} integer (int64) id
+    {field} Category category
+    {field} Tag[] tags
+    {field} string status {"available", "pending", "sold"}
+}
+
+Pet ..> Category
+Pet ..> Tag
+
+
+class ApiResponse {
+    {field} integer (int32) code
+    {field} string type
+    {field} string message
+}
+
+
+@enduml
