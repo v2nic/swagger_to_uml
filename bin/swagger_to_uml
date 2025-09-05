@@ -250,73 +250,95 @@ class XSDDefinition:
         self.relationships = relationships  # type: Set[str]
 
     @staticmethod
-    def from_element(name, element, element_types=None):
+    def from_element(name, element, element_types=None, simple_types=None):
         properties = []  # type: List[Property]
         relationships = set()
         element_types = element_types or {}
+        simple_types = simple_types or {}
         
         # Handle complexType elements
         if element.tag.endswith('}complexType'):
-            # Process sequence/choice elements
-            for child in element:
-                if child.tag.endswith('}sequence') or child.tag.endswith('}choice'):
-                    for prop_element in child:
-                        if prop_element.tag.endswith('}element'):
-                            # Check if it's a reference to another element
-                            if prop_element.get('ref'):
-                                ref_name = prop_element.get('ref')
-                                # Extract local name from qualified name (namespace:localname)
-                                if ':' in ref_name:
-                                    namespace_prefix = ref_name.split(':')[0]
-                                    prop_name = ref_name.split(':')[-1]
-                                    prop_type = ref_name.split(':')[-1]
-                                    # Determine if referenced element resolves to a simple xs:* type
-                                    resolved_type = element_types.get(prop_name)
-                                    is_simple = False
-                                    if resolved_type:
-                                        if ':' in resolved_type and resolved_type.split(':')[0] == 'xs':
-                                            is_simple = True
-                                    # Only add relationship if not simple
-                                    if not is_simple and namespace_prefix != 'xs':
-                                        relationships.add(prop_type)
-                                else:
-                                    prop_name = ref_name
-                                    prop_type = ref_name
-                                    # Best effort: assume unknown local refs are complex
-                                    relationships.add(prop_type)
-                            else:
-                                # It's a direct element definition
-                                prop_name = prop_element.get('name', '')
-                                prop_type = prop_element.get('type', 'string')
-                                
-                                # Handle namespace prefixes in type
-                                if ':' in prop_type:
-                                    namespace_prefix = prop_type.split(':')[0]
-                                    prop_type = prop_type.split(':')[-1]
-                                    # If it's a reference to a built-in type, keep the prefix for clarity
-                                    if namespace_prefix == 'xs':
-                                        prop_type = 'xs:' + prop_type
-                            
-                            properties.append(Property(
-                                name=prop_name,
-                                type=prop_type,
-                                required=prop_element.get('minOccurs', '1') != '0'
-                            ))
-                        
-                # Process attributes
-                elif child.tag.endswith('}attribute'):
-                    attr_name = child.get('name', '')
-                    attr_type = child.get('type', 'string')
+            # Find descendant elements in sequences/choices (covers complexContent/extension cases)
+            descendants = []
+            for path in ('.//{*}sequence/{*}element', './/{*}choice/{*}element'):
+                descendants.extend(element.findall(path))
+
+            for prop_element in descendants:
+                # Check if it's a reference to another element
+                if prop_element.get('ref'):
+                    ref_name = prop_element.get('ref')
+                    # Extract local name from qualified name (namespace:localname)
+                    if ':' in ref_name:
+                        namespace_prefix = ref_name.split(':')[0]
+                        prop_name = ref_name.split(':')[-1]
+                        prop_type = ref_name.split(':')[-1]
+                        # Determine if referenced element resolves to a simple xs:* type
+                        resolved_type = element_types.get(prop_name)
+                        is_simple = False
+                        if resolved_type:
+                            # If element type is named, see if that named simpleType's base is xs:*
+                            local = resolved_type.split(':')[-1]
+                            st = simple_types.get(local)
+                            if st and st.get('base_prefix') == 'xs' and not st.get('has_enum'):
+                                is_simple = True
+                                # Set field type to the xs base (e.g., xs:anyURI)
+                                base_local = st.get('base_local')
+                                if base_local:
+                                    prop_type = f"xs:{base_local}"
+                            elif ':' in resolved_type and resolved_type.split(':')[0] == 'xs':
+                                is_simple = True
+                                # resolved directly to an xs:* type
+                                prop_type = resolved_type
+                        # Only add relationship if not simple
+                        if not is_simple and namespace_prefix != 'xs':
+                            relationships.add(prop_type)
+                    else:
+                        prop_name = ref_name
+                        prop_type = ref_name
+                        # Best effort: assume unknown local refs are complex
+                        relationships.add(prop_type)
+                else:
+                    # It's a direct element definition
+                    prop_name = prop_element.get('name', '')
+                    prop_type = prop_element.get('type', 'string')
                     
                     # Handle namespace prefixes in type
-                    if ':' in attr_type:
-                        attr_type = attr_type.split(':')[-1]
-                    
-                    properties.append(Property(
-                        name=attr_name,
-                        type=attr_type,
-                        required=child.get('use', 'optional') == 'required'
-                    ))
+                    if ':' in prop_type:
+                        namespace_prefix = prop_type.split(':')[0]
+                        local_type = prop_type.split(':')[-1]
+                        # If it's a reference to a built-in type, keep the prefix for clarity
+                        if namespace_prefix == 'xs':
+                            prop_type = 'xs:' + local_type
+                        else:
+                            # Non-built-in named type: set local name and add relationship
+                            prop_type = local_type
+                            # Non-built-in named type: set local name and add relationship
+                            # But suppress relationship if that named simpleType base is xs:*
+                            st = simple_types.get(local_type)
+                            if not (st and st.get('base_prefix') == 'xs' and not st.get('has_enum')):
+                                relationships.add(local_type)
+                    # If no prefix: leave prop_type as-is (likely simple name or built-in handled elsewhere)
+                
+                properties.append(Property(
+                    name=prop_name,
+                    type=prop_type,
+                    required=prop_element.get('minOccurs', '1') != '0'
+                ))
+
+            # Process descendant attributes
+            for child in element.findall('.//{*}attribute'):
+                attr_name = child.get('name', '')
+                attr_type = child.get('type', 'string')
+                
+                # Handle namespace prefixes in type
+                if ':' in attr_type:
+                    attr_type = attr_type.split(':')[-1]
+                
+                properties.append(Property(
+                    name=attr_name,
+                    type=attr_type,
+                    required=child.get('use', 'optional') == 'required'
+                ))
         
         # Handle simpleType elements with enumerations
         elif element.tag.endswith('}simpleType'):
@@ -390,12 +412,15 @@ class XSDSchema:
         # Build an index of top-level element name -> type across all XSDs in the directory
         import os, glob
         element_types = {}
+        # map of named simpleType -> {base_prefix, base_local, has_enum}
+        simple_types = {}
         substitution_groups = {}
         base_dir = os.path.dirname(filename)
         for xsd_path in glob.glob(os.path.join(base_dir, '*.xsd')):
             try:
                 other_tree = ET.parse(xsd_path)
                 other_root = other_tree.getroot()
+                # collect top-level elements (name -> type)
                 for el in other_root.findall('./{*}element'):
                     n = el.get('name')
                     t = el.get('type')
@@ -405,6 +430,31 @@ class XSDSchema:
                     if n and sg:
                         head = sg.split(':')[-1]
                         substitution_groups.setdefault(head, set()).add(n)
+                # collect named simpleTypes
+                for st in other_root.findall('./{*}simpleType'):
+                    st_name = st.get('name')
+                    if not st_name:
+                        continue
+                    base_prefix = None
+                    base_local = None
+                    has_enum = False
+                    restr = st.find('./{*}restriction')
+                    if restr is not None:
+                        base = restr.get('base')
+                        if base:
+                            if ':' in base:
+                                base_prefix = base.split(':')[0]
+                                base_local = base.split(':')[-1]
+                            else:
+                                base_local = base
+                        for enum_child in restr.findall('./{*}enumeration'):
+                            has_enum = True
+                            break
+                    simple_types[st_name] = {
+                        'base_prefix': base_prefix,
+                        'base_local': base_local,
+                        'has_enum': has_enum,
+                    }
             except Exception:
                 continue
         
@@ -412,15 +462,18 @@ class XSDSchema:
         for complex_type in root.findall('.//{*}complexType[@name]'):
             name = complex_type.get('name')
             if name and name not in processed_types:
-                definitions.append(XSDDefinition.from_element(name, complex_type, element_types))
+                definitions.append(XSDDefinition.from_element(name, complex_type, element_types, simple_types))
                 processed_types.add(name)
         
         # Process named simpleType definitions
         for simple_type in root.findall('.//{*}simpleType[@name]'):
             name = simple_type.get('name')
             if name and name not in processed_types:
-                definitions.append(XSDDefinition.from_element(name, simple_type, element_types))
-                processed_types.add(name)
+                # Only include simpleTypes that have enumerations; skip base xs:* wrappers
+                st_info = simple_types.get(name)
+                if st_info and st_info.get('has_enum'):
+                    definitions.append(XSDDefinition.from_element(name, simple_type, element_types, simple_types))
+                    processed_types.add(name)
         
         # Process top-level elements that have complexType definitions
         # Only process elements with complex types, not simple types like xs:string, xs:boolean, etc.
@@ -436,6 +489,10 @@ class XSDSchema:
                     type_name = type_attr.split(':')[-1]
                     # Skip simple built-in types (xs:string, xs:boolean, etc.)
                     if type_prefix == 'xs':
+                        continue
+                    # Skip elements whose named type is a simpleType with xs:* base and no enum (e.g., MarketContextType)
+                    st_info = simple_types.get(type_name)
+                    if st_info and st_info.get('base_prefix') == 'xs' and not st_info.get('has_enum'):
                         continue
                 
                 # Only create a definition if it's not already processed
