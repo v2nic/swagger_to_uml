@@ -21,6 +21,7 @@
 import json
 import sys
 from typing import List, Optional, Any, Set
+import xml.etree.ElementTree as ET
 
 
 def resolve_ref(ref):
@@ -206,6 +207,26 @@ class Definition:
 
     @property
     def uml(self):
+        # If this is a simpleType with enumeration values, render as an enum
+        if self.type == 'simpleType' and self.properties:
+            enum_values = None
+            # Take enum values from the first property that defines an enum
+            for prop in self.properties:
+                if getattr(prop, 'enum', None):
+                    enum_values = prop.enum
+                    break
+            if enum_values:
+                # Render a PlantUML enum with one literal per line
+                lines = []
+                lines.append('enum {name} {{'.format(name=self.name))
+                for v in enum_values:
+                    # Keep JSON-style quoting to preserve spaces and punctuation in values
+                    lines.append('    {val}'.format(val=json.dumps(v)))
+                lines.append('}')
+                lines.append('')
+                return '\n'.join(lines)
+
+        # Default rendering as class
         result = 'class {name} {{\n'.format(name=self.name)
 
         # required properties first
@@ -219,6 +240,241 @@ class Definition:
             result += '{name} ..> {relationship}\n'.format(name=self.name, relationship=relationship)
 
         return result
+
+
+class XSDDefinition:
+    def __init__(self, name, type, properties, relationships):
+        self.name = name  # type: str
+        self.type = type  # type: str
+        self.properties = properties  # type: List[Property]
+        self.relationships = relationships  # type: Set[str]
+
+    @staticmethod
+    def from_element(name, element, element_types=None):
+        properties = []  # type: List[Property]
+        relationships = set()
+        element_types = element_types or {}
+        
+        # Handle complexType elements
+        if element.tag.endswith('}complexType'):
+            # Process sequence/choice elements
+            for child in element:
+                if child.tag.endswith('}sequence') or child.tag.endswith('}choice'):
+                    for prop_element in child:
+                        if prop_element.tag.endswith('}element'):
+                            # Check if it's a reference to another element
+                            if prop_element.get('ref'):
+                                ref_name = prop_element.get('ref')
+                                # Extract local name from qualified name (namespace:localname)
+                                if ':' in ref_name:
+                                    namespace_prefix = ref_name.split(':')[0]
+                                    prop_name = ref_name.split(':')[-1]
+                                    prop_type = ref_name.split(':')[-1]
+                                    # Determine if referenced element resolves to a simple xs:* type
+                                    resolved_type = element_types.get(prop_name)
+                                    is_simple = False
+                                    if resolved_type:
+                                        if ':' in resolved_type and resolved_type.split(':')[0] == 'xs':
+                                            is_simple = True
+                                    # Only add relationship if not simple
+                                    if not is_simple and namespace_prefix != 'xs':
+                                        relationships.add(prop_type)
+                                else:
+                                    prop_name = ref_name
+                                    prop_type = ref_name
+                                    # Best effort: assume unknown local refs are complex
+                                    relationships.add(prop_type)
+                            else:
+                                # It's a direct element definition
+                                prop_name = prop_element.get('name', '')
+                                prop_type = prop_element.get('type', 'string')
+                                
+                                # Handle namespace prefixes in type
+                                if ':' in prop_type:
+                                    namespace_prefix = prop_type.split(':')[0]
+                                    prop_type = prop_type.split(':')[-1]
+                                    # If it's a reference to a built-in type, keep the prefix for clarity
+                                    if namespace_prefix == 'xs':
+                                        prop_type = 'xs:' + prop_type
+                            
+                            properties.append(Property(
+                                name=prop_name,
+                                type=prop_type,
+                                required=prop_element.get('minOccurs', '1') != '0'
+                            ))
+                        
+                # Process attributes
+                elif child.tag.endswith('}attribute'):
+                    attr_name = child.get('name', '')
+                    attr_type = child.get('type', 'string')
+                    
+                    # Handle namespace prefixes in type
+                    if ':' in attr_type:
+                        attr_type = attr_type.split(':')[-1]
+                    
+                    properties.append(Property(
+                        name=attr_name,
+                        type=attr_type,
+                        required=child.get('use', 'optional') == 'required'
+                    ))
+        
+        # Handle simpleType elements with enumerations
+        elif element.tag.endswith('}simpleType'):
+            for child in element:
+                if child.tag.endswith('}restriction'):
+                    enum_values = []
+                    for enum_child in child:
+                        if enum_child.tag.endswith('}enumeration'):
+                            enum_values.append(enum_child.get('value'))
+                    
+                    if enum_values:
+                        properties.append(Property(
+                            name='value',
+                            type='enum',
+                            required=True,
+                            enum=enum_values
+                        ))
+        
+        return XSDDefinition(name=name,
+                             type='complexType' if element.tag.endswith('}complexType') else 'simpleType',
+                             properties=properties,
+                             relationships=relationships)
+
+    @property
+    def uml(self):
+        # If this is a simpleType with enumeration values, render as an enum
+        if self.type == 'simpleType' and self.properties:
+            enum_values = None
+            for prop in self.properties:
+                if getattr(prop, 'enum', None):
+                    enum_values = prop.enum
+                    break
+            if enum_values:
+                lines = []
+                lines.append('enum {name} {{'.format(name=self.name))
+                for v in enum_values:
+                    lines.append('    {val}'.format(val=json.dumps(v)))
+                lines.append('}')
+                lines.append('')
+                return '\n'.join(lines)
+
+        # Default: render as class
+        result = 'class {name} {{\n'.format(name=self.name)
+
+        # required properties first
+        for property in sorted(self.properties, key=lambda x: x.required, reverse=True):
+            result += '    {property_str}\n'.format(property_str=property.uml)
+
+        result += '}\n\n'
+
+        # add relationships
+        for relationship in sorted(self.relationships):
+            result += '{name} ..> {relationship}\n'.format(name=self.name, relationship=relationship)
+
+        return result
+
+
+class XSDSchema:
+    def __init__(self, definitions, substitution_groups=None):
+        self.definitions = definitions  # type: List[XSDDefinition]
+        self.substitution_groups = substitution_groups or {}  # type: dict[str, set[str]]
+    
+    @staticmethod
+    def from_file(filename):
+        # Parse the XSD file
+        tree = ET.parse(filename)
+        root = tree.getroot()
+        
+        definitions = []
+        processed_types = set()
+        # Build an index of top-level element name -> type across all XSDs in the directory
+        import os, glob
+        element_types = {}
+        substitution_groups = {}
+        base_dir = os.path.dirname(filename)
+        for xsd_path in glob.glob(os.path.join(base_dir, '*.xsd')):
+            try:
+                other_tree = ET.parse(xsd_path)
+                other_root = other_tree.getroot()
+                for el in other_root.findall('./{*}element'):
+                    n = el.get('name')
+                    t = el.get('type')
+                    if n and t:
+                        element_types[n] = t
+                    sg = el.get('substitutionGroup')
+                    if n and sg:
+                        head = sg.split(':')[-1]
+                        substitution_groups.setdefault(head, set()).add(n)
+            except Exception:
+                continue
+        
+        # Process named complexType definitions first
+        for complex_type in root.findall('.//{*}complexType[@name]'):
+            name = complex_type.get('name')
+            if name and name not in processed_types:
+                definitions.append(XSDDefinition.from_element(name, complex_type, element_types))
+                processed_types.add(name)
+        
+        # Process named simpleType definitions
+        for simple_type in root.findall('.//{*}simpleType[@name]'):
+            name = simple_type.get('name')
+            if name and name not in processed_types:
+                definitions.append(XSDDefinition.from_element(name, simple_type, element_types))
+                processed_types.add(name)
+        
+        # Process top-level elements that have complexType definitions
+        # Only process elements with complex types, not simple types like xs:string, xs:boolean, etc.
+        for element in root.findall('./{*}element'):
+            name = element.get('name')
+            type_attr = element.get('type')
+            
+            # If element has a type attribute
+            if name and type_attr:
+                # Handle namespace prefixes in type
+                if ':' in type_attr:
+                    type_prefix = type_attr.split(':')[0]
+                    type_name = type_attr.split(':')[-1]
+                    # Skip simple built-in types (xs:string, xs:boolean, etc.)
+                    if type_prefix == 'xs':
+                        continue
+                
+                # Only create a definition if it's not already processed
+                if name not in processed_types:
+                    # Create a simple property definition
+                    properties = [Property(name='element', type=type_name, required=True)]
+                    definitions.append(XSDDefinition(name=name, type='element', properties=properties, relationships={type_name}))
+                    processed_types.add(name)
+        
+        return XSDSchema(definitions=definitions, substitution_groups=substitution_groups)
+
+    @property
+    def uml(self):
+        # Build substitution group UML blocks
+        group_blocks = []
+        for head, members in sorted(self.substitution_groups.items()):
+            if members:
+                group_blocks.append(XSDSubstitutionGroup(head, members).uml)
+        uml_str = '@startuml\nhide empty members\nset namespaceSeparator none\n\n{definitions}\n\n{groups}\n@enduml\n'
+        return uml_str.format(
+            definitions='\n\n'.join([d.uml for d in self.definitions]),
+            groups='\n\n'.join(group_blocks)
+        )
+
+class XSDSubstitutionGroup:
+    def __init__(self, head, members):
+        self.head = head  # type: str
+        self.members = sorted(list(members))  # type: List[str]
+
+    @property
+    def uml(self):
+        # Render head as abstract class with a stereotype and member inheritance
+        lines = []
+        lines.append('abstract class {head} <<substitutionGroupHead>>'.format(head=self.head))
+        lines.append('')
+        for m in self.members:
+            lines.append('{member} --|> {head}'.format(member=m, head=self.head))
+        lines.append('')
+        return '\n'.join(lines)
 
 
 class Parameter:
@@ -377,5 +633,11 @@ class Swagger:
 
 if __name__ == '__main__':
     input_file_name = sys.argv[1]
-    sw = Swagger.from_file(input_file_name)
-    print(sw.uml, end='', flush=True)
+    
+    # Check if it's an XSD file
+    if input_file_name.endswith('.xsd'):
+        xsd = XSDSchema.from_file(input_file_name)
+        print(xsd.uml, end='', flush=True)
+    else:
+        sw = Swagger.from_file(input_file_name)
+        print(sw.uml, end='', flush=True)
