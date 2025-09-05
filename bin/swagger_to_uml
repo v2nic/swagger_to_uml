@@ -219,9 +219,15 @@ class Definition:
                 # Render a PlantUML enum with one literal per line
                 lines = []
                 lines.append('enum {name} {{'.format(name=self.name))
-                for v in enum_values:
-                    # Keep JSON-style quoting to preserve spaces and punctuation in values
-                    lines.append('    {val}'.format(val=json.dumps(v)))
+                # Truncate enum values if more than 10
+                if len(enum_values) > 10:
+                    for v in enum_values[:10]:
+                        lines.append('    {val}'.format(val=json.dumps(v)))
+                    lines.append('    ...')
+                else:
+                    for v in enum_values:
+                        # Keep JSON-style quoting to preserve spaces and punctuation in values
+                        lines.append('    {val}'.format(val=json.dumps(v)))
                 lines.append('}')
                 lines.append('')
                 return '\n'.join(lines)
@@ -398,8 +404,14 @@ class XSDDefinition:
                 lines = []
                 quoted_name = self._quote_class_name(self.name)
                 lines.append('enum {name} {{'.format(name=quoted_name))
-                for v in enum_values:
-                    lines.append('    {val}'.format(val=json.dumps(v)))
+                # Truncate enum values if more than 10
+                if len(enum_values) > 10:
+                    for v in enum_values[:10]:
+                        lines.append('    {val}'.format(val=json.dumps(v)))
+                    lines.append('    ...')
+                else:
+                    for v in enum_values:
+                        lines.append('    {val}'.format(val=json.dumps(v)))
                 lines.append('}')
                 lines.append('')
                 return '\n'.join(lines)
