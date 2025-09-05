@@ -248,6 +248,15 @@ class XSDDefinition:
         self.type = type  # type: str
         self.properties = properties  # type: List[Property]
         self.relationships = relationships  # type: Set[str]
+    
+    @staticmethod
+    def _quote_class_name(name):
+        """Quote class names that contain special characters for PlantUML compatibility."""
+        import re
+        # If the name contains characters that are not alphanumeric or underscore, quote it
+        if re.search(r'[^A-Za-z0-9_]', name):
+            return f'"{name}"'
+        return name
 
     @staticmethod
     def from_element(name, element, element_types=None, simple_types=None):
@@ -260,7 +269,8 @@ class XSDDefinition:
         if element.tag.endswith('}complexType'):
             # Find descendant elements in sequences/choices (covers complexContent/extension cases)
             descendants = []
-            for path in ('.//{*}sequence/{*}element', './/{*}choice/{*}element'):
+            # Handle both direct sequences and those within complexContent/extension
+            for path in ('.//{*}sequence/{*}element', './/{*}choice/{*}element', './/{*}complexContent/{*}extension/{*}sequence/{*}element'):
                 descendants.extend(element.findall(path))
 
             for prop_element in descendants:
@@ -324,7 +334,13 @@ class XSDDefinition:
                             st = simple_types.get(local_type)
                             if not (st and st.get('base_prefix') == 'xs' and not st.get('has_enum')):
                                 relationships.add(local_type)
-                    # If no prefix: leave prop_type as-is (likely simple name or built-in handled elsewhere)
+                    else:
+                        # If no prefix, check if this is a named complexType
+                        # Add relationship if the type name exists in our element_types or simple_types
+                        if prop_type in element_types or prop_type in simple_types:
+                            relationships.add(prop_type)
+                        elif prop_type != 'string' and not prop_type.startswith('xs:'):
+                            relationships.add(prop_type)
                 
                 properties.append(Property(
                     name=prop_name,
@@ -380,7 +396,8 @@ class XSDDefinition:
                     break
             if enum_values:
                 lines = []
-                lines.append('enum {name} {{'.format(name=self.name))
+                quoted_name = self._quote_class_name(self.name)
+                lines.append('enum {name} {{'.format(name=quoted_name))
                 for v in enum_values:
                     lines.append('    {val}'.format(val=json.dumps(v)))
                 lines.append('}')
@@ -388,7 +405,8 @@ class XSDDefinition:
                 return '\n'.join(lines)
 
         # Default: render as class
-        result = 'class {name} {{\n'.format(name=self.name)
+        quoted_name = self._quote_class_name(self.name)
+        result = 'class {name} {{\n'.format(name=quoted_name)
 
         # required properties first
         for property in sorted(self.properties, key=lambda x: x.required, reverse=True):
@@ -398,7 +416,8 @@ class XSDDefinition:
 
         # add relationships
         for relationship in sorted(self.relationships):
-            result += '{name} ..> {relationship}\n'.format(name=self.name, relationship=relationship)
+            quoted_relationship = self._quote_class_name(relationship)
+            result += '{name} ..> {relationship}\n'.format(name=quoted_name, relationship=quoted_relationship)
 
         return result
 
@@ -488,30 +507,71 @@ class XSDSchema:
         
         # Process top-level elements that have complexType definitions
         # Only process elements with complex types, not simple types like xs:string, xs:boolean, etc.
-        for element in root.findall('./{*}element'):
-            name = element.get('name')
-            type_attr = element.get('type')
-            
-            # If element has a type attribute
-            if name and type_attr:
-                # Handle namespace prefixes in type
-                if ':' in type_attr:
-                    type_prefix = type_attr.split(':')[0]
-                    type_name = type_attr.split(':')[-1]
-                    # Skip simple built-in types (xs:string, xs:boolean, etc.)
-                    if type_prefix == 'xs':
-                        continue
-                    # Skip elements whose named type is a simpleType with xs:* base and no enum (e.g., MarketContextType)
-                    st_info = simple_types.get(type_name)
-                    if st_info and st_info.get('base_prefix') == 'xs' and not st_info.get('has_enum'):
-                        continue
+        def handle_top_level_elements(parent_root):
+            for element in parent_root.findall('./{*}element'):
+                name = element.get('name')
+                type_attr = element.get('type')
                 
-                # Only create a definition if it's not already processed
-                if name not in processed_types:
-                    # Create a simple property definition
-                    properties = [Property(name='element', type=type_name, required=True)]
-                    definitions.append(XSDDefinition(name=name, type='element', properties=properties, relationships={type_name}))
-                    processed_types.add(name)
+                # If element has a type attribute
+                if name and type_attr:
+                    # Handle namespace prefixes in type
+                    if ':' in type_attr:
+                        type_prefix = type_attr.split(':')[0]
+                        type_name = type_attr.split(':')[-1]
+                        # Skip simple built-in types (xs:string, xs:boolean, etc.)
+                        if type_prefix == 'xs':
+                            continue
+                        # Skip elements whose named type is a simpleType with xs:* base and no enum (e.g., MarketContextType)
+                        st_info = simple_types.get(type_name)
+                        if st_info and st_info.get('base_prefix') == 'xs' and not st_info.get('has_enum'):
+                            continue
+                    else:
+                        # No prefix; treat as simple name
+                        type_name = type_attr
+                    
+                    # Always ensure the wrapper has an association to the named type
+                    if name not in processed_types:
+                        # Create a simple property definition
+                        properties = [Property(name='element', type=type_name, required=True)]
+                        definitions.append(XSDDefinition(name=name, type='element', properties=properties, relationships={type_name}))
+                        processed_types.add(name)
+                    else:
+                        # Update existing definition to ensure relationship exists
+                        for d in definitions:
+                            if getattr(d, 'name', None) == name:
+                                d.relationships.add(type_name)
+                                # Ensure it has at least one field reflecting the element type
+                                if not any(f.name == 'element' for f in d.properties):
+                                    d.properties.append(Property(name='element', type=type_name, required=True))
+                                break
+
+        # Handle elements in the root file
+        handle_top_level_elements(root)
+        # And across all sibling XSDs to pick up wrappers like ServiceDeliveryPoint
+        for xsd_path in glob.glob(os.path.join(base_dir, '*.xsd')):
+            try:
+                other_tree = ET.parse(xsd_path)
+                other_root = other_tree.getroot()
+                handle_top_level_elements(other_root)
+            except Exception:
+                continue
+        
+        # Final pass: ensure every top-level element in element_types has a wrapper
+        existing_names = {getattr(d, 'name', '') for d in definitions}
+        for el_name, t in element_types.items():
+            if not el_name or not t:
+                continue
+            # Skip xs:*
+            if ':' in t and t.split(':')[0] == 'xs':
+                continue
+            type_name = t.split(':')[-1]
+            st_info = simple_types.get(type_name)
+            if st_info and st_info.get('base_prefix') == 'xs' and not st_info.get('has_enum'):
+                continue
+            if el_name not in existing_names:
+                properties = [Property(name='element', type=type_name, required=True)]
+                definitions.append(XSDDefinition(name=el_name, type='element', properties=properties, relationships={type_name}))
+                existing_names.add(el_name)
         
         return XSDSchema(definitions=definitions, substitution_groups=substitution_groups)
 
