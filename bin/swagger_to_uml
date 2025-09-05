@@ -289,9 +289,16 @@ class XSDDefinition:
                                 is_simple = True
                                 # resolved directly to an xs:* type
                                 prop_type = resolved_type
+                            else:
+                                # Not simple: use the resolved named type as the field type
+                                prop_type = local
+                                relationships.add(local)
                         # Only add relationship if not simple
                         if not is_simple and namespace_prefix != 'xs':
-                            relationships.add(prop_type)
+                            # relationship already added above when resolved_type is named
+                            # If we didn't have resolved_type, fall back to element name
+                            if not resolved_type:
+                                relationships.add(prop_type)
                     else:
                         prop_name = ref_name
                         prop_type = ref_name
@@ -458,22 +465,26 @@ class XSDSchema:
             except Exception:
                 continue
         
-        # Process named complexType definitions first
-        for complex_type in root.findall('.//{*}complexType[@name]'):
-            name = complex_type.get('name')
-            if name and name not in processed_types:
-                definitions.append(XSDDefinition.from_element(name, complex_type, element_types, simple_types))
-                processed_types.add(name)
-        
-        # Process named simpleType definitions
-        for simple_type in root.findall('.//{*}simpleType[@name]'):
-            name = simple_type.get('name')
-            if name and name not in processed_types:
-                # Only include simpleTypes that have enumerations; skip base xs:* wrappers
-                st_info = simple_types.get(name)
-                if st_info and st_info.get('has_enum'):
-                    definitions.append(XSDDefinition.from_element(name, simple_type, element_types, simple_types))
-                    processed_types.add(name)
+        # Process named complexType definitions across ALL XSDs
+        for xsd_path in glob.glob(os.path.join(base_dir, '*.xsd')):
+            try:
+                other_tree = ET.parse(xsd_path)
+                other_root = other_tree.getroot()
+                for complex_type in other_root.findall('.//{*}complexType[@name]'):
+                    name = complex_type.get('name')
+                    if name and name not in processed_types:
+                        definitions.append(XSDDefinition.from_element(name, complex_type, element_types, simple_types))
+                        processed_types.add(name)
+                # Process named simpleType definitions with enums across ALL XSDs
+                for simple_type in other_root.findall('.//{*}simpleType[@name]'):
+                    name = simple_type.get('name')
+                    if name and name not in processed_types:
+                        st_info = simple_types.get(name)
+                        if st_info and st_info.get('has_enum'):
+                            definitions.append(XSDDefinition.from_element(name, simple_type, element_types, simple_types))
+                            processed_types.add(name)
+            except Exception:
+                continue
         
         # Process top-level elements that have complexType definitions
         # Only process elements with complex types, not simple types like xs:string, xs:boolean, etc.
