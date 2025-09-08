@@ -310,11 +310,9 @@ class XSDDefinition:
                                 prop_type = local
                                 relationships.add(local)
                         # Only add relationship if not simple
-                        if not is_simple and namespace_prefix != 'xs':
-                            # relationship already added above when resolved_type is named
-                            # If we didn't have resolved_type, fall back to element name
-                            if not resolved_type:
-                                relationships.add(prop_type)
+                        # Add relationship for all non-xs namespace references
+                        if namespace_prefix != 'xs':
+                            relationships.add(prop_type)
                     else:
                         prop_name = ref_name
                         prop_type = ref_name
@@ -337,8 +335,9 @@ class XSDDefinition:
                             prop_type = local_type
                             # Non-built-in named type: set local name and add relationship
                             # But suppress relationship if that named simpleType base is xs:*
+                            # Suppress relationship if the prefix is 'xs' or if the named simpleType base is xs:*
                             st = simple_types.get(local_type)
-                            if not (st and st.get('base_prefix') == 'xs' and not st.get('has_enum')):
+                            if namespace_prefix != 'xs' and not (st and st.get('base_prefix') == 'xs' and not st.get('has_enum')):
                                 relationships.add(local_type)
                     else:
                         # If no prefix, check if this is a named complexType
@@ -369,7 +368,7 @@ class XSDDefinition:
                     required=child.get('use', 'optional') == 'required'
                 ))
         
-        # Handle simpleType elements with enumerations
+        # Handle simpleType elements with enumerations or unions
         elif element.tag.endswith('}simpleType'):
             for child in element:
                 if child.tag.endswith('}restriction'):
@@ -385,6 +384,21 @@ class XSDDefinition:
                             required=True,
                             enum=enum_values
                         ))
+                elif child.tag.endswith('}union'):
+                    # For union types, create relationships to all member types
+                    member_types = child.get('memberTypes', '')
+                    if member_types:
+                        for member_type in member_types.split():
+                            if ':' in member_type:
+                                prefix = member_type.split(':')[0]
+                                local_type = member_type.split(':')[-1]
+                                # Skip built-in XML Schema types
+                                if prefix == 'xs':
+                                    continue
+                                relationships.add(local_type)
+                            else:
+                                # Handle member types without namespace prefix
+                                relationships.add(member_type)
         
         return XSDDefinition(name=name,
                              type='complexType' if element.tag.endswith('}complexType') else 'simpleType',
@@ -428,6 +442,9 @@ class XSDDefinition:
 
         # add relationships
         for relationship in sorted(self.relationships):
+            # Skip built-in XML Schema types
+            if relationship.startswith('xs:'):
+                continue
             quoted_relationship = self._quote_class_name(relationship)
             result += '{name} ..> {relationship}\n'.format(name=quoted_name, relationship=quoted_relationship)
 
@@ -476,6 +493,9 @@ class XSDSchema:
                     base_prefix = None
                     base_local = None
                     has_enum = False
+                    union_member_types = []
+                    
+                    # Check for restriction
                     restr = st.find('./{*}restriction')
                     if restr is not None:
                         base = restr.get('base')
@@ -488,10 +508,27 @@ class XSDSchema:
                         for enum_child in restr.findall('./{*}enumeration'):
                             has_enum = True
                             break
+                    
+                    # Check for union
+                    union_elem = st.find('./{*}union')
+                    if union_elem is not None:
+                        member_types = union_elem.get('memberTypes', '')
+                        if member_types:
+                            union_member_types = member_types.split()
+                        # If union has member types, check if any are enums
+                        for member_type in union_member_types:
+                            if ':' in member_type:
+                                member_name = member_type.split(':')[-1]
+                                member_info = simple_types.get(member_name)
+                                if member_info and member_info.get('has_enum'):
+                                    has_enum = True
+                                    break
+                    
                     simple_types[st_name] = {
                         'base_prefix': base_prefix,
                         'base_local': base_local,
                         'has_enum': has_enum,
+                        'union_member_types': union_member_types
                     }
             except Exception:
                 continue
@@ -511,7 +548,7 @@ class XSDSchema:
                     name = simple_type.get('name')
                     if name and name not in processed_types:
                         st_info = simple_types.get(name)
-                        if st_info and st_info.get('has_enum'):
+                        if st_info and (st_info.get('has_enum') or st_info.get('union_member_types')):
                             definitions.append(XSDDefinition.from_element(name, simple_type, element_types, simple_types))
                             processed_types.add(name)
             except Exception:
