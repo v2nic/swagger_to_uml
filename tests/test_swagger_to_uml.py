@@ -87,6 +87,43 @@ def test_definition_from_dict_and_uml_relationships():
     assert "Pet ..> Tag" in uml
 
 
+def test_definition_from_dict_allof():
+    mod = load_swagger_module()
+
+    definitions = {
+        "Base": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"}
+            },
+            "required": ["id"]
+        },
+        "Extended": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"}
+            }
+        }
+    }
+
+    d = {
+        "allOf": [
+            {"$ref": "#/definitions/Base"},
+            {"$ref": "#/definitions/Extended"}
+        ]
+    }
+
+    definition = mod.Definition.from_dict("Combined", d, definitions)
+    assert definition.type == "object"
+    # Check properties merged
+    prop_names = [p.name for p in definition.properties]
+    assert "id" in prop_names
+    assert "name" in prop_names
+    # Check required
+    id_prop = next(p for p in definition.properties if p.name == "id")
+    assert id_prop.required == True
+
+
 # --------------------
 # End-to-end test against petstore example
 # --------------------

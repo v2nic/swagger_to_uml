@@ -27,6 +27,40 @@ def resolve_ref(ref):
     return ref.split('/')[-1]
 
 
+def resolve_allof(schema, definitions):
+    """
+    Resolve allOf by merging referenced schemas.
+    """
+    if 'allOf' not in schema:
+        return schema
+
+    resolved = {}
+    for item in schema['allOf']:
+        if '$ref' in item:
+            ref_name = resolve_ref(item['$ref'])
+            sub_schema = definitions.get(ref_name, {})
+            sub_resolved = resolve_allof(sub_schema, definitions)
+        else:
+            sub_resolved = resolve_allof(item, definitions)
+
+        # Merge properties
+        for key, value in sub_resolved.items():
+            if key == 'properties':
+                if 'properties' not in resolved:
+                    resolved['properties'] = {}
+                resolved['properties'].update(value)
+            elif key == 'required':
+                if 'required' not in resolved:
+                    resolved['required'] = []
+                if isinstance(value, list):
+                    resolved['required'].extend(value)
+                else:
+                    resolved['required'].append(value)
+            else:
+                resolved[key] = value
+    return resolved
+
+
 class Property:
     def __init__(self, name, type, required, example=None, description=None, default=None, enum=None, format=None,
                  items=None, maximum=None, exclusive_maximum=False, minimum=None, exclusive_minimum=False,
@@ -188,7 +222,12 @@ class Definition:
         self.enum_values = enum_values  # type: Optional[List[Any]]
 
     @staticmethod
-    def from_dict(name, d):
+    def from_dict(name, d, definitions=None):
+        if 'allOf' in d:
+            if definitions is None:
+                raise ValueError("definitions required for allOf resolution")
+            d = resolve_allof(d, definitions)
+
         properties = []  # type: List[Property]
         for property_name, property in d.get('properties', {}).items():
             properties.append(Property.from_dict(
@@ -368,7 +407,7 @@ class Swagger:
         if 'openapi' in d and 'paths' in d:
             d = Swagger._normalize_openapi_to_swagger2(d)
 
-        definitions = [Definition.from_dict(name, definition) for name, definition in d.get('definitions',{}).items()]
+        definitions = [Definition.from_dict(name, definition, d.get('definitions', {})) for name, definition in d.get('definitions',{}).items()]
         paths = [Path.from_dict(d, path_name, path) for path_name, path in d['paths'].items()]
         return Swagger(definitions=definitions, paths=paths)
 
