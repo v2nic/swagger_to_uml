@@ -29,19 +29,24 @@ def resolve_ref(ref):
 
 def resolve_allof(schema, definitions):
     """
-    Resolve allOf by merging referenced schemas.
+    Resolve allOf by merging referenced schemas and collecting inheritance refs.
+    Returns (resolved_schema, allof_refs)
     """
     if 'allOf' not in schema:
-        return schema
+        return schema, []
 
     resolved = {}
+    allof_refs = []
     for item in schema['allOf']:
         if '$ref' in item:
             ref_name = resolve_ref(item['$ref'])
+            allof_refs.append(ref_name)
             sub_schema = definitions.get(ref_name, {})
-            sub_resolved = resolve_allof(sub_schema, definitions)
+            sub_resolved, sub_refs = resolve_allof(sub_schema, definitions)
+            allof_refs.extend(sub_refs)
         else:
-            sub_resolved = resolve_allof(item, definitions)
+            sub_resolved, sub_refs = resolve_allof(item, definitions)
+            allof_refs.extend(sub_refs)
 
         # Merge properties
         for key, value in sub_resolved.items():
@@ -58,7 +63,7 @@ def resolve_allof(schema, definitions):
                     resolved['required'].append(value)
             else:
                 resolved[key] = value
-    return resolved
+    return resolved, allof_refs
 
 
 class Property:
@@ -214,19 +219,22 @@ class Property:
 
 
 class Definition:
-    def __init__(self, name, type, properties, relationships, enum_values=None):
+    def __init__(self, name, type, properties, relationships, enum_values=None, inheritances=None):
         self.name = name  # type: str
         self.type = type  # type: str
         self.properties = properties  # type: List[Property]
         self.relationships = relationships  # type: Set[str]
+        self.inheritances = inheritances or set()  # type: Set[str]
         self.enum_values = enum_values  # type: Optional[List[Any]]
 
     @staticmethod
     def from_dict(name, d, definitions=None):
+        inheritances = set()
         if 'allOf' in d:
             if definitions is None:
                 raise ValueError("definitions required for allOf resolution")
-            d = resolve_allof(d, definitions)
+            d, allof_refs = resolve_allof(d, definitions)
+            inheritances = set(allof_refs)
 
         properties = []  # type: List[Property]
         for property_name, property in d.get('properties', {}).items():
@@ -245,6 +253,7 @@ class Definition:
                           type=d['type'],
                           properties=properties,
                           relationships={property.ref_type for property in properties if property.ref_type},
+                          inheritances=inheritances,
                           enum_values=enum_values)
 
     @property
@@ -264,7 +273,11 @@ class Definition:
 
         result += '}\n\n'
 
-        # add relationships
+        # add inheritance relationships first
+        for inheritance in sorted(self.inheritances):
+            result += '{name} --|> {inheritance}\n'.format(name=self.name, inheritance=inheritance)
+
+        # add associations
         for relationship in sorted(self.relationships):
             result += '{name} ..> {relationship}\n'.format(name=self.name, relationship=relationship)
 

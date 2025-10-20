@@ -122,6 +122,13 @@ def test_definition_from_dict_allof():
     # Check required
     id_prop = next(p for p in definition.properties if p.name == "id")
     assert id_prop.required == True
+    # Check inheritance relationships
+    assert "Base" in definition.inheritances
+    assert "Extended" in definition.inheritances
+    # Check UML includes inheritance arrows
+    uml = definition.uml
+    assert "Combined --|> Base" in uml
+    assert "Combined --|> Extended" in uml
 
 
 # --------------------
