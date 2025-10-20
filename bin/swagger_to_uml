@@ -593,6 +593,14 @@ class XSDSchema:
                                 if not any(f.name == 'element' for f in d.properties):
                                     d.properties.append(Property(name='element', type=type_name, required=True))
                                 break
+                
+                # If element has an inline complexType definition
+                elif name and element.find('./{*}complexType') is not None:
+                    if name not in processed_types:
+                        # Process the inline complexType
+                        inline_complex_type = element.find('./{*}complexType')
+                        definitions.append(XSDDefinition.from_element(name, inline_complex_type, element_types, simple_types))
+                        processed_types.add(name)
 
         # Handle elements in the root file
         handle_top_level_elements(root)

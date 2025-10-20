@@ -60,3 +60,29 @@ def test_EiTargetType_field_types_resolved():
 def test_pulseCount_member_of_itemBase():
     m = load_model()
     assert m.has_inherit("pulseCount", "itemBase")
+
+
+def test_enum_truncation_for_large_enums():
+    m = load_model()
+    # ISO3AlphaCurrencyCodeContentType should have more than 10 values and be truncated
+    if "ISO3AlphaCurrencyCodeContentType" in m.enums:
+        enum_values = m.enums["ISO3AlphaCurrencyCodeContentType"]
+        # Should have exactly 11 entries (10 currency codes + "...")
+        assert len(enum_values) == 11
+        # Last entry should be "..."
+        assert enum_values[-1] == "..."
+        # First 10 should be actual currency codes
+        assert all(len(v) == 3 for v in enum_values[:10])  # Currency codes are 3 letters
+
+
+def test_reportNameEnumeratedType_has_relationship():
+    """Test that reportNameEnumeratedType has relationships in the PlantUML diagram."""
+    m = load_model()
+    # reportNameEnumeratedType should have relationships
+    # It should be referenced by reportNameType (union type)
+    assert "reportNameEnumeratedType" in m.enums or "reportNameEnumeratedType" in m.classes
+    
+    # Check if it has any relationships
+    relationships = m.relationships
+    report_name_related = [rel for rel in relationships if "reportNameEnumeratedType" in rel]
+    assert len(report_name_related) > 0, f"reportNameEnumeratedType has no relationships: {report_name_related}"
