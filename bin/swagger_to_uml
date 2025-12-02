@@ -22,6 +22,9 @@ import json
 import sys
 from typing import List, Optional, Any, Set
 
+# PlantUML output for properties without type information
+TYPE_NOT_SPECIFIED = '<i>not specified</i>'
+
 
 def resolve_ref(ref):
     return ref.split('/')[-1]
@@ -71,7 +74,7 @@ class Property:
                  items=None, maximum=None, exclusive_maximum=False, minimum=None, exclusive_minimum=False,
                  multiple_of=None, max_length=None, min_length=0, pattern=None, max_items=None, min_items=0,
                  unique_items=False, ref_type=None):
-        # type
+        # type - can be None internally; converted to TYPE_NOT_SPECIFIED at render time
         self.type = type  # type: str
         self.format = format  # type: Optional[str]
         self.ref_type = ref_type  # type: Optional[str]
@@ -108,6 +111,7 @@ class Property:
     def from_dict(property_name, d, required):
         # whether the type was resolved
         ref_type = None
+        format_str = None  # Initialize format_str to avoid NameError
 
         # We use the Parameter class for parameters inside the swagger specification, but also for parameters. There,
         # type information is given in a "schema" property.
@@ -117,6 +121,37 @@ class Property:
             type_dict = d['schema']
         elif 'allOf' in d and len(d['allOf']) > 0:
             type_dict = d['allOf'][0]
+        elif 'oneOf' in d and len(d['oneOf']) > 0:
+            # Extract types from oneOf options
+            oneof_types = []
+            format_candidates = []
+            for option in d['oneOf']:
+                if 'type' in option:
+                    opt_type = option['type']
+                    if opt_type == 'array' and 'items' in option and 'type' in option['items']:
+                        # Handle array types like "number[]"
+                        items_type = option['items']['type']
+                        oneof_types.append(f"{items_type}[]")
+                        # Collect format from items if available
+                        if 'format' in option['items']:
+                            format_candidates.append(option['items']['format'])
+                    else:
+                        oneof_types.append(opt_type)
+                        # Collect format if available
+                        if 'format' in option:
+                            format_candidates.append(option['format'])
+                elif '$ref' in option:
+                    # Handle refs in oneOf
+                    ref_name = resolve_ref(option['$ref'])
+                    oneof_types.append(ref_name)
+            if oneof_types:
+                # Deduplicate and join types
+                type_str = '/'.join(list(dict.fromkeys(oneof_types)))  # Preserve order while deduplicating
+                # Use the first format found (common for oneOf with same base type)
+                format_str = format_candidates[0] if format_candidates else None
+                type_dict = {}
+            else:
+                type_dict = {}
         else:
             type_dict = {}
 
@@ -126,8 +161,29 @@ class Property:
         elif '$ref' in type_dict:
             type_str = resolve_ref(type_dict['$ref'])
             ref_type = type_str
+        elif 'type_str' in locals() and type_str is not None:
+            # type_str was already set by oneOf handling above
+            pass
         else:
-            type_str = '<i>not specified</i>'
+            type_str = None
+
+        # Type inference from default value if no type specified
+        if type_str is None and 'default' in d:
+            default_val = d['default']
+            if isinstance(default_val, bool):
+                type_str = 'boolean'
+            elif isinstance(default_val, int):
+                type_str = 'integer'
+            elif isinstance(default_val, float):
+                type_str = 'number'
+            elif isinstance(default_val, str):
+                type_str = 'string'
+
+        # Use format from oneOf if available, otherwise from original dict
+        if 'format_str' in locals() and format_str:
+            final_format = format_str
+        else:
+            final_format = d.get('format')
 
         # join multiple types to string
         if isinstance(type_str, list):
@@ -151,7 +207,7 @@ class Property:
             description=d.get('description'),
             default=d.get('default'),
             enum=d.get('enum'),
-            format=d.get('format'),
+            format=final_format,
             items=items,
             maximum=d.get('maximum'),
             exclusive_maximum=d.get('exclusiveMaximum', False),
@@ -169,8 +225,18 @@ class Property:
 
     @property
     def uml(self):
+        # Handle None type (internal state) -> TYPE_NOT_SPECIFIED (presentation)
+        if self.type is None:
+            type_str = TYPE_NOT_SPECIFIED
+        else:
+            type_str = self.type
+        
+        # format (e.g., date-time) - only apply if we have a real type
+        if self.format and self.type is not None:
+            type_str += ' ({format})'.format(format=self.format)
+        
         # type or array
-        if self.type == 'array':
+        if type_str == 'array':
             # determine lower and upper bound
             lower = ''
             upper = ''
@@ -185,12 +251,6 @@ class Property:
                 bounds = '{lower}:{upper}'.format(lower=lower, upper=upper)
 
             type_str = '{items}[{bounds}]'.format(items=self.items, bounds=bounds)
-        else:
-            type_str = self.type
-
-        # format (e.g., date-time)
-        if self.format:
-            type_str += ' ({format})'.format(format=self.format)
 
         # name string (bold if property is required)
         if self.required:

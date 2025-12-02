@@ -184,3 +184,24 @@ def test_openapi_end_to_end_smoke():
     assert generated.startswith("@startuml")
     assert "class Pet {" in generated  # model from components.schemas
     assert 'interface "/pet"' in generated  # a path interface should exist
+
+
+def test_oneof_and_default_inference():
+    # Test oneOf schema handling and type inference from defaults
+    input_file = ROOT / "test_netload_bug.json"
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT_PATH), str(input_file)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    generated = result.stdout
+    # Verify oneOf handling - should show "number/number[] (float)" not "not specified"
+    assert "{field} number/number[] (float) max_import_kw = 1000000" in generated
+    # Verify type inference from defaults - should show "integer" not "not specified"  
+    assert "{field} integer load = 0" in generated
+    assert "{field} integer pv = 0" in generated
+    # Ensure no "not specified" appears in the output
+    assert "<i>not specified</i>" not in generated

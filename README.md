@@ -37,9 +37,12 @@ brew install plantuml graphviz
 
 ## Testing
 
-The script is tested with `pytest`.
+The script is tested with `pytest`. Install dependencies and run tests:
 
-    python -m pytest -q
+```bash
+pip install -r requirements.txt
+python -m pytest -q
+```
 
 ## Contribute
 
