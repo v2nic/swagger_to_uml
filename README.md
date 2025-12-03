@@ -1,12 +1,12 @@
 # Swagger to UML
 
-A small pure Python script that converts API specifications ([OpenAPI](https://www.openapis.org)/[Swagger](https://swagger.io)) into [PlantUML](http://plantuml.com) diagrams. The goal is not to replace existing documentation generators, but to complement them with a visual representation of the routes, models, and their relationships.
+A small pure Python script that converts API specifications ([OpenAPI](https://www.openapis.org)/[Swagger](https://swagger.io)) into UML diagrams. Supports both [PlantUML](http://plantuml.com) and [Mermaid](https://mermaid.js.org/) output formats. The goal is not to replace existing documentation generators, but to complement them with a visual representation of the routes, models, and their relationships.
 
 ## Example
 
 ![excerpt of the petstore example](petstore_example/swagger.png)
 
-To create a diagram from the [petstore example](http://petstore.swagger.io), call the script with:
+To create a PlantUML diagram from the [petstore example](http://petstore.swagger.io), call the script with:
 
 ```
 python bin/swagger_to_uml petstore_example/swagger.json > petstore_example/swagger.puml
@@ -20,10 +20,25 @@ plantuml petstore_example/swagger.puml -tpng
 
 Note you need to install [PlantUML](http://plantuml.com) and [Graphviz](http://www.graphviz.org) for this.
 
+### Mermaid Output
+
+To generate a Mermaid diagram instead, use the `-f mermaid` option:
+
+```
+python bin/swagger_to_uml petstore_example/swagger.json -f mermaid > petstore_example/swagger.mmd
+```
+
+Mermaid diagrams can be rendered directly in many Markdown viewers (GitHub, GitLab, VS Code, etc.) or using the [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli).
+
 ## Input formats
 
 - Supports Swagger 2.0 and OpenAPI 3.x.
 - Input can be JSON or YAML; format is auto-detected. For YAML files, `PyYAML` is required.
+
+## Output formats
+
+- **PlantUML** (default): Traditional UML diagram format requiring PlantUML tooling.
+- **Mermaid**: Modern diagram format with native support in many platforms.
 
 ## Installation
 
@@ -34,6 +49,69 @@ On macOS, the installation of the required tools with [Homebrew](https://brew.sh
 ```
 brew install plantuml graphviz
 ```
+
+## Usage
+
+```
+python bin/swagger_to_uml [-h] [-f {plantuml,mermaid}] input_file
+
+positional arguments:
+  input_file            Path to Swagger/OpenAPI specification file (JSON or YAML)
+
+options:
+  -h, --help            show this help message and exit
+  -f, --format {plantuml,mermaid}
+                        Output format: plantuml (default) or mermaid
+```
+
+## Programmatic Usage
+
+The tool can also be used as a Python library:
+
+```python
+from swagger_to_uml import parse_file, PlantUMLRenderer, MermaidRenderer
+
+diagram = parse_file("api_spec.json")
+
+plantuml_output = PlantUMLRenderer().render(diagram)
+
+mermaid_output = MermaidRenderer().render(diagram)
+```
+
+## Converting to SVG
+
+### PlantUML to SVG
+
+To convert PlantUML diagrams to SVG:
+
+```bash
+# Using PlantUML CLI
+plantuml diagram.puml -tsvg
+
+# Or using the Java jar directly
+java -jar plantuml.jar diagram.puml -tsvg
+```
+
+### Mermaid to SVG
+
+To convert Mermaid diagrams to SVG:
+
+```bash
+# Install Mermaid CLI
+npm install -g @mermaid-js/mermaid-cli
+
+# Convert to SVG
+mmdc -i diagram.mmd -o diagram.svg
+
+# Convert to other formats
+mmdc -i diagram.mmd -o diagram.png
+mmdc -i diagram.mmd -o diagram.pdf
+```
+
+### Online Alternatives
+
+- **PlantUML**: [PlantUML Online Server](http://www.plantuml.com/plantuml/)
+- **Mermaid**: [Mermaid Live Editor](https://mermaid.live/)
 
 ## Testing
 

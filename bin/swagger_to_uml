@@ -18,6 +18,7 @@
 # OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT
 # OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+import argparse
 import json
 import sys
 from typing import List, Optional, Any, Set
@@ -593,7 +594,31 @@ class Swagger:
         )
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description='Convert API specifications (Swagger/OpenAPI) to UML diagrams'
+    )
+    parser.add_argument('input_file', help='Path to Swagger/OpenAPI specification file (JSON or YAML)')
+    parser.add_argument(
+        '-f', '--format',
+        choices=['plantuml', 'mermaid'],
+        default='plantuml',
+        help='Output format: plantuml (default) or mermaid'
+    )
+    args = parser.parse_args()
+
+    if args.format == 'mermaid':
+        import os
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from swagger_to_uml import parse_file, MermaidRenderer
+        diagram = parse_file(args.input_file)
+        renderer = MermaidRenderer()
+        print(renderer.render(diagram), end='', flush=True)
+    else:
+        sw = Swagger.from_file(args.input_file)
+        print(sw.uml, end='', flush=True)
+
+
 if __name__ == '__main__':
-    input_file_name = sys.argv[1]
-    sw = Swagger.from_file(input_file_name)
-    print(sw.uml, end='', flush=True)
+    main()

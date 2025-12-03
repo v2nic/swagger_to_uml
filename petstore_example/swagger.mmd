@@ -1,0 +1,218 @@
+classDiagram
+    class _pet {
+        <<interface>>
+    }
+    class POST__pet {
+        +Pet body
+        +405 unspecified
+    }
+    POST__pet ..> Pet
+    _pet ..> POST__pet
+    class PUT__pet {
+        +Pet body
+        +400 unspecified
+        +404 unspecified
+        +405 unspecified
+    }
+    PUT__pet ..> Pet
+    _pet ..> PUT__pet
+    class _pet_findByStatus {
+        <<interface>>
+    }
+    class GET__pet_findByStatus {
+        +string[] status
+        +200 Pet[]
+        +400 unspecified
+    }
+    GET__pet_findByStatus ..> Pet
+    _pet_findByStatus ..> GET__pet_findByStatus
+    class _pet_findByTags {
+        <<interface>>
+    }
+    class GET__pet_findByTags {
+        +string[] tags
+        +200 Pet[]
+        +400 unspecified
+    }
+    GET__pet_findByTags ..> Pet
+    _pet_findByTags ..> GET__pet_findByTags
+    class _pet__petId_ {
+        <<interface>>
+    }
+    class GET__pet__petId_ {
+        +integer~int64~ petId
+        +200 Pet
+        +400 unspecified
+        +404 unspecified
+    }
+    GET__pet__petId_ ..> Pet
+    _pet__petId_ ..> GET__pet__petId_
+    class POST__pet__petId_ {
+        +integer~int64~ petId
+        -string name
+        -string status
+        +405 unspecified
+    }
+    _pet__petId_ ..> POST__pet__petId_
+    class DELETE__pet__petId_ {
+        -string api_key
+        +integer~int64~ petId
+        +400 unspecified
+        +404 unspecified
+    }
+    _pet__petId_ ..> DELETE__pet__petId_
+    class _pet__petId__uploadImage {
+        <<interface>>
+    }
+    class POST__pet__petId__uploadImage {
+        +integer~int64~ petId
+        -string additionalMetadata
+        -file file
+        +200 ApiResponse
+    }
+    POST__pet__petId__uploadImage ..> ApiResponse
+    _pet__petId__uploadImage ..> POST__pet__petId__uploadImage
+    class _store_inventory {
+        <<interface>>
+    }
+    class GET__store_inventory {
+        +200 object
+    }
+    _store_inventory ..> GET__store_inventory
+    class _store_order {
+        <<interface>>
+    }
+    class POST__store_order {
+        +Order body
+        +200 Order
+        +400 unspecified
+    }
+    POST__store_order ..> Order
+    _store_order ..> POST__store_order
+    class _store_order__orderId_ {
+        <<interface>>
+    }
+    class GET__store_order__orderId_ {
+        +integer~int64~ orderId
+        +200 Order
+        +400 unspecified
+        +404 unspecified
+    }
+    GET__store_order__orderId_ ..> Order
+    _store_order__orderId_ ..> GET__store_order__orderId_
+    class DELETE__store_order__orderId_ {
+        +integer~int64~ orderId
+        +400 unspecified
+        +404 unspecified
+    }
+    _store_order__orderId_ ..> DELETE__store_order__orderId_
+    class _user {
+        <<interface>>
+    }
+    class POST__user {
+        +User body
+        +default unspecified
+    }
+    POST__user ..> User
+    _user ..> POST__user
+    class _user_createWithArray {
+        <<interface>>
+    }
+    class POST__user_createWithArray {
+        +User[] body
+        +default unspecified
+    }
+    POST__user_createWithArray ..> User
+    _user_createWithArray ..> POST__user_createWithArray
+    class _user_createWithList {
+        <<interface>>
+    }
+    class POST__user_createWithList {
+        +User[] body
+        +default unspecified
+    }
+    POST__user_createWithList ..> User
+    _user_createWithList ..> POST__user_createWithList
+    class _user_login {
+        <<interface>>
+    }
+    class GET__user_login {
+        +string username
+        +string password
+        +200 string
+        +400 unspecified
+    }
+    _user_login ..> GET__user_login
+    class _user_logout {
+        <<interface>>
+    }
+    class GET__user_logout {
+        +default unspecified
+    }
+    _user_logout ..> GET__user_logout
+    class _user__username_ {
+        <<interface>>
+    }
+    class GET__user__username_ {
+        +string username
+        +200 User
+        +400 unspecified
+        +404 unspecified
+    }
+    GET__user__username_ ..> User
+    _user__username_ ..> GET__user__username_
+    class PUT__user__username_ {
+        +string username
+        +User body
+        +400 unspecified
+        +404 unspecified
+    }
+    PUT__user__username_ ..> User
+    _user__username_ ..> PUT__user__username_
+    class DELETE__user__username_ {
+        +string username
+        +400 unspecified
+        +404 unspecified
+    }
+    _user__username_ ..> DELETE__user__username_
+    class Order {
+        -integer~int64~ id
+        -integer~int64~ petId
+        -integer~int32~ quantity
+        -string~date-time~ shipDate
+        -string status ["placed","approved","delivered"]
+        -boolean complete [=false]
+    }
+    class Category {
+        -integer~int64~ id
+        -string name
+    }
+    class User {
+        -integer~int64~ id
+        -string username
+        -string firstName
+        -string lastName
+        -string email
+        -string password
+        -string phone
+        -integer~int32~ userStatus
+    }
+    class Tag {
+        -integer~int64~ id
+        -string name
+    }
+    class Pet {
+        +string name
+        +string[] photoUrls
+        -integer~int64~ id
+        -Category category
+        -Tag[] tags
+        -string status ["available","pending","sold"]
+    }
+    Pet ..> Category
+    Pet ..> Tag
+    class ApiResponse {
+        -integer~int32~ code
+        -string type
+        -string message
+    }

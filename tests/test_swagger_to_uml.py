@@ -1,6 +1,7 @@
 import importlib.util
 import importlib.machinery
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "bin" / "swagger_to_uml"
 PETSTORE_DIR = ROOT / "petstore_example"
+
+sys.path.insert(0, str(ROOT))
 
 
 def load_swagger_module():
@@ -205,3 +208,86 @@ def test_oneof_and_default_inference():
     assert "{field} integer pv = 0" in generated
     # Ensure no "not specified" appears in the output
     assert "<i>not specified</i>" not in generated
+
+
+def test_mermaid_output_smoke():
+    input_file = PETSTORE_DIR / "swagger.json"
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT_PATH), str(input_file), "-f", "mermaid"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    generated = result.stdout
+    assert generated.startswith("classDiagram")
+    assert "class Pet {" in generated
+    assert "<<interface>>" in generated
+
+
+def test_mermaid_output_openapi():
+    input_file = PETSTORE_DIR / "openapi.json"
+
+    result = subprocess.run(
+        ["python3", str(SCRIPT_PATH), str(input_file), "-f", "mermaid"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    generated = result.stdout
+    assert generated.startswith("classDiagram")
+    assert "class Pet {" in generated
+
+
+def test_intermediate_model_parsing():
+    from swagger_to_uml import parse_file, Diagram, DiagramClass
+    
+    diagram = parse_file(str(PETSTORE_DIR / "swagger.json"))
+    
+    assert isinstance(diagram, Diagram)
+    assert len(diagram.classes) > 0
+    assert len(diagram.paths) > 0
+    
+    pet_class = next((c for c in diagram.classes if c.name == "Pet"), None)
+    assert pet_class is not None
+    assert isinstance(pet_class, DiagramClass)
+    assert len(pet_class.fields) > 0
+
+
+def test_plantuml_renderer():
+    from swagger_to_uml import parse_file, PlantUMLRenderer
+    
+    diagram = parse_file(str(PETSTORE_DIR / "swagger.json"))
+    renderer = PlantUMLRenderer()
+    output = renderer.render(diagram)
+    
+    assert output.startswith("@startuml")
+    assert output.strip().endswith("@enduml")
+    assert "class Pet {" in output
+
+
+def test_mermaid_renderer():
+    from swagger_to_uml import parse_file, MermaidRenderer
+    
+    diagram = parse_file(str(PETSTORE_DIR / "swagger.json"))
+    renderer = MermaidRenderer()
+    output = renderer.render(diagram)
+    
+    assert output.startswith("classDiagram")
+    assert "class Pet {" in output
+
+
+def test_enum_rendering_mermaid():
+    from swagger_to_uml import MermaidRenderer
+    from swagger_to_uml.model import Diagram, DiagramEnum
+    
+    diagram = Diagram(enums=[DiagramEnum(name="Status", values=["active", "inactive", "pending"])])
+    renderer = MermaidRenderer()
+    output = renderer.render(diagram)
+    
+    assert "<<enumeration>>" in output
+    assert "active" in output
+    assert "inactive" in output
+    assert "pending" in output
